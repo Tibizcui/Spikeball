@@ -226,7 +226,7 @@ const SPEED       = 2.5;
 const BALL_RADIUS = 26;
 const HIT_BONUS   = 28;
 const ADD_INTERVAL= 3000;
-const MAX_BALLS   = 8;
+const MAX_BALLS   = Infinity;
 
 // Palette mariage (or, blush, crème, muted + quelques couleurs fêtardes)
 const COLORS = [
@@ -292,7 +292,7 @@ function startGame() {
    INIT
    ═══════════════════════════════════════════════ */
 function makeBall(index) {
-  const sections = MAX_BALLS;
+  const sections = Math.max(balls.length + 1, 8); // répartition dynamique
   const sectionW = W / sections;
   const baseX = sectionW * (index % sections) + sectionW / 2;
   const x = Math.max(BALL_RADIUS, Math.min(W - BALL_RADIUS, baseX + (Math.random() - 0.5) * sectionW * 0.5));
