@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jeu des balles – Mémoire de travail</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #eef2f7;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      color: #1e293b;
+    }
+
+    h1 {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+      letter-spacing: 0.01em;
+    }
+
+    #subtitle {
+      font-size: 0.88rem;
+      color: #475569;
+      margin-bottom: 14px;
+      text-align: center;
+    }
+
+    #hud {
+      width: 620px;
+      max-width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+      padding: 0 2px;
+    }
+
+    #hud span {
+      font-size: 0.92rem;
+      color: #334155;
+      font-weight: 600;
+    }
+
+    #game-container {
+      position: relative;
+      width: 620px;
+      max-width: 100%;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.12);
+      border: 2px solid #cbd5e1;
+      background: #ffffff;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      cursor: pointer;
+    }
+
+    /* ── Overlay (écran d'accueil et de fin) ── */
+    #overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(255, 255, 255, 0.95);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 24px;
+      text-align: center;
+    }
+
+    #overlay h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+      color: #0f172a;
+    }
+
+    #overlay p {
+      font-size: 0.95rem;
+      color: #334155;
+      line-height: 1.65;
+      max-width: 420px;
+      margin-bottom: 22px;
+    }
+
+    #overlay strong { color: #1e40af; }
+
+    .btn {
+      display: inline-block;
+      padding: 11px 32px;
+      font-size: 0.98rem;
+      font-family: inherit;
+      font-weight: 600;
+      background: #1d4ed8;
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.18s;
+    }
+
+    .btn:hover  { background: #1e40af; }
+    .btn:focus  { outline: 3px solid #93c5fd; outline-offset: 3px; }
+
+    #note-accessibilite {
+      margin-top: 12px;
+      font-size: 0.8rem;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Jeu des balles</h1>
+  <p id="subtitle">Cliquez sur les balles pour les maintenir en l'air.<br>Si une balle touche le bas, la partie s'arrête.</p>
+
+  <div id="hud" aria-live="polite">
+    <span id="ball-count">2 balles en jeu</span>
+    <span id="level-label">Niveau 1</span>
+  </div>
+
+  <div id="game-container">
+    <canvas
+      id="gameCanvas"
+      width="620"
+      height="420"
+      role="img"
+      aria-label="Zone de jeu : des balles tombent, cliquez dessus pour les relancer vers le haut."
+    ></canvas>
+
+    <!-- Écran d'accueil -->
+    <div id="overlay" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
+      <h2 id="overlay-title">Jeu des balles</h2>
+      <p>
+        Cliquez sur les balles pour les <strong>maintenir en l'air</strong>.
+        Si une balle touche le bord bas de l'écran, la partie s'arrête.<br><br>
+        Le nombre de balles augmente toutes les quelques secondes —
+        comme la charge de la <strong>mémoire de travail</strong>.
+      </p>
+      <button class="btn" id="startBtn" autofocus>Commencer</button>
+    </div>
+  </div>
+
+  <p id="note-accessibilite">⚠ Ce jeu requiert l'utilisation de la souris.</p>
+
+<script>
+  /* ─────────────────────────────────────────────
+     CONFIGURATION
+  ───────────────────────────────────────────── */
+  const SPEED          = 2.5;     // vitesse constante de déplacement (px/frame)
+  const BALL_RADIUS    = 26;      // rayon des balles (px)
+  const HIT_BONUS      = 24;      // zone de clic élargie (px)
+  const ADD_INTERVAL   = 4000;    // intervalle entre chaque ajout de balle (ms)
+  const MAX_BALLS      = 8;       // plafond (8 balles = impossible, fin inévitable)
+
+  const COLORS = [
+    '#2563eb', // bleu
+    '#f59e0b', // ambre
+    '#10b981', // vert
+    '#ef4444', // rouge
+    '#8b5cf6', // violet
+    '#ec4899', // rose
+    '#06b6d4', // cyan
+    '#f97316', // orange
+  ];
+
+  /* ─────────────────────────────────────────────
+     RÉFÉRENCES DOM
+  ───────────────────────────────────────────── */
+  const canvas      = document.getElementById('gameCanvas');
+  const ctx         = canvas.getContext('2d');
+  const overlay     = document.getElementById('overlay');
+  const startBtn    = document.getElementById('startBtn');
+  const ballCountEl = document.getElementById('ball-count');
+  const levelLabelEl= document.getElementById('level-label');
+
+  const W = canvas.width;
+  const H = canvas.height;
+
+  /* ─────────────────────────────────────────────
+     ÉTAT DU JEU
+  ───────────────────────────────────────────── */
+  let balls       = [];
+  let running     = false;
+  let rafId       = null;
+  let nextAddTime = 0;
+  let level       = 1;
+
+  /* ─────────────────────────────────────────────
+     CRÉATION D'UNE BALLE
+  ───────────────────────────────────────────── */
+  function makeBall(index) {
+    // Répartit les balles horizontalement avec un peu d'aléatoire
+    const sections = MAX_BALLS;
+    const sectionW = W / sections;
+    const baseX    = sectionW * (index % sections) + sectionW / 2;
+    const x = Math.max(BALL_RADIUS, Math.min(W - BALL_RADIUS,
+                baseX + (Math.random() - 0.5) * sectionW * 0.5));
+
+    return {
+      x,
+      y  : BALL_RADIUS,                                // démarre tout en haut
+      vx : (Math.random() - 0.5) * 2.2,
+      vy : SPEED,                                      // vitesse de descente constante
+      r  : BALL_RADIUS,
+      color: COLORS[index % COLORS.length],
+    };
+  }
+
+  /* ─────────────────────────────────────────────
+     INITIALISATION
+  ───────────────────────────────────────────── */
+  function initGame() {
+    balls   = [];
+    level   = 1;
+    running = false;
+
+    // 1 seule balle au départ
+    balls.push(makeBall(0));
+
+    updateHUD();
+  }
+
+  function updateHUD() {
+    const n = balls.length;
+    ballCountEl.textContent  = n + ' balle' + (n > 1 ? 's' : '') + ' en jeu';
+    levelLabelEl.textContent = 'Niveau ' + level;
+  }
+
+  /* ─────────────────────────────────────────────
+     BOUCLE DE JEU
+  ───────────────────────────────────────────── */
+  function gameLoop(timestamp) {
+    if (!running) return;
+
+    // Ajout progressif de balles
+    if (balls.length < MAX_BALLS && timestamp >= nextAddTime) {
+      balls.push(makeBall(balls.length));
+      level++;
+      updateHUD();
+      nextAddTime = timestamp + ADD_INTERVAL;
+    }
+
+    // Physique
+    for (const b of balls) {
+      b.x += b.vx;
+      b.y += b.vy;
+
+      // Rebond sur les murs latéraux
+      if (b.x - b.r < 0)  { b.x = b.r;     b.vx = Math.abs(b.vx); }
+      if (b.x + b.r > W)  { b.x = W - b.r; b.vx = -Math.abs(b.vx); }
+
+      // Rebond sur le plafond : repart vers le bas à vitesse constante
+      if (b.y - b.r <= 0) { b.y = b.r;     b.vy = SPEED; }
+
+      // Détection de fin
+      if (b.y - b.r > H) {
+        endGame();
+        return;
+      }
+    }
+
+    render();
+    rafId = requestAnimationFrame(gameLoop);
+  }
+
+  /* ─────────────────────────────────────────────
+     RENDU
+  ───────────────────────────────────────────── */
+  function render() {
+    // Fond
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, W, H);
+
+    // Zone de danger en bas (rouge translucide)
+    const dangerH = 36;
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.07)';
+    ctx.fillRect(0, H - dangerH, W, dangerH);
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.5)';
+    ctx.fillRect(0, H - 3, W, 3);
+
+    // Balles
+    for (const b of balls) drawBall(b);
+  }
+
+  function drawBall(b) {
+    ctx.save();
+
+    // Ombre portée
+    ctx.shadowColor  = 'rgba(0,0,0,0.18)';
+    ctx.shadowBlur   = 10;
+    ctx.shadowOffsetY= 4;
+
+    // Corps de la balle
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fillStyle = b.color;
+    ctx.fill();
+
+    ctx.restore();
+
+    // Reflet lumineux
+    ctx.beginPath();
+    ctx.arc(b.x - b.r * 0.28, b.y - b.r * 0.28, b.r * 0.22, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.38)';
+    ctx.fill();
+  }
+
+  /* ─────────────────────────────────────────────
+     DÉMARRAGE / FIN
+  ───────────────────────────────────────────── */
+  function startGame() {
+    initGame();
+    overlay.style.display = 'none';
+    running = true;
+
+    // Planifie l'ajout de la 2e balle après le premier intervalle
+    const startTs = performance.now();
+    nextAddTime   = startTs + ADD_INTERVAL;
+
+    render();
+    rafId = requestAnimationFrame(gameLoop);
+  }
+
+  function endGame() {
+    running = false;
+    cancelAnimationFrame(rafId);
+
+    // Affiche le dernier état figé
+    render();
+
+    const n = balls.length;
+
+    overlay.innerHTML = `
+      <h2 id="overlay-title">Partie terminée&nbsp;!</h2>
+      <p>
+        Vous mainteniez <strong>${n} balle${n > 1 ? 's' : ''}</strong> lorsqu'une est tombée.<br><br>
+        C'est le principe de la <strong>mémoire de travail</strong>&nbsp;: au-delà d'un certain nombre
+        d'éléments à gérer simultanément, le cerveau ne peut plus tout traiter — certaines informations
+        sont alors perdues.
+      </p>
+      <button class="btn" id="restartBtn" autofocus>Rejouer</button>
+    `;
+    overlay.style.display = 'flex';
+    document.getElementById('restartBtn').addEventListener('click', startGame);
+    document.getElementById('restartBtn').focus();
+  }
+
+  /* ─────────────────────────────────────────────
+     INTERACTION SOURIS
+  ───────────────────────────────────────────── */
+  canvas.addEventListener('click', function (e) {
+    if (!running) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const scaleY = H / rect.height;
+    const mx = (e.clientX - rect.left) * scaleX;
+    const my = (e.clientY - rect.top)  * scaleY;
+
+    for (const b of balls) {
+      const dx = mx - b.x;
+      const dy = my - b.y;
+      if (Math.sqrt(dx * dx + dy * dy) <= b.r + HIT_BONUS) {
+        b.vy = -SPEED;
+        break; // une seule balle relancée par clic
+      }
+    }
+  });
+
+  /* ─────────────────────────────────────────────
+     LANCEMENT
+  ───────────────────────────────────────────── */
+  startBtn.addEventListener('click', startGame);
+
+  // Affiche un premier rendu statique en fond d'overlay
+  initGame();
+  render();
+</script>
+
+</body>
+</html>
