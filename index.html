@@ -117,8 +117,8 @@
     <input type="text" id="player-name" placeholder="Marie, Jean, Mamie Gisèle…" maxlength="20" autocomplete="off"/>
     <button class="btn-gold" id="start-btn" onclick="startGame()" disabled>Commencer ! 🏐</button>
     <div style="margin-top:10px;font-size:10px;color:var(--muted);text-align:center;letter-spacing:.06em;line-height:1.8">
-      🖱️ PC · Cliquez sur les balles pour les relancer<br>
-      📱 Mobile · Touchez les balles<br>
+      🖱️ PC · Clic sur une balle · ou <strong style="color:var(--gold)">Espace</strong> pour frapper la plus basse<br>
+      📱 Mobile · Touchez les balles · ou bouton 🏐 sous le terrain<br>
       Si une balle touche le bas, la partie s'arrête.
     </div>
   </div>
@@ -155,9 +155,21 @@
     <div class="game-overlay show" id="startOverlay">
       <div class="overlay-icon">🏐</div>
       <div class="overlay-title">Spikeball</div>
-      <div class="overlay-sub">Cliquez sur les balles pour les maintenir en l'air.<br>Une balle touche le bas → partie terminée.<br>Le nombre de balles augmente toutes les 4 secondes !</div>
+      <div class="overlay-sub">Cliquez / touchez les balles pour les maintenir en l'air.<br>Une balle touche le bas → partie terminée.<br>Une nouvelle balle toutes les 3 secondes !</div>
       <button class="btn-sm-gold" onclick="launchGame()">C'est parti ! 🏐</button>
     </div>
+  </div>
+
+  <!-- Bouton tap + hint clavier (toujours visible) -->
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px;width:100%;max-width:640px;">
+    <button id="tapBtn" onclick="tapNearest()"
+      style="padding:14px 40px;border-radius:8px;border:none;background:linear-gradient(135deg,var(--gold),var(--gold-light));color:var(--dark);font-family:'Playfair Display',serif;font-size:16px;font-weight:700;cursor:pointer;letter-spacing:.05em;transition:transform .1s;width:100%;max-width:320px;"
+      onmousedown="this.style.transform='scale(.96)'" onmouseup="this.style.transform=''" ontouchstart="this.style.transform='scale(.96)'" ontouchend="this.style.transform=''">
+      🏐 Frapper la balle !
+    </button>
+    <p style="font-size:10px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;text-align:center;">
+      Clic / touch sur une balle · ou <kbd style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--cream);">Espace</kbd> pour frapper la plus basse
+    </p>
   </div>
 </div>
 
@@ -502,6 +514,24 @@ canvas.addEventListener('touchstart', e => {
   e.preventDefault();
   for (const t of e.changedTouches) hitTest(t.clientX, t.clientY);
 }, { passive: false });
+
+// Frappe la balle la plus proche du bas (utilisée par le bouton et la touche Espace)
+function tapNearest() {
+  if (!running) return;
+  let lowest = null;
+  for (const b of balls) {
+    if (!lowest || b.y > lowest.y) lowest = b;
+  }
+  if (lowest) { lowest.vy = -SPEED; lowest.pulse = 1; }
+}
+
+// Clavier : Espace = frappe la plus basse / Entrée aussi
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'Enter') {
+    e.preventDefault();
+    tapNearest();
+  }
+});
 
 /* ═══════════════════════════════════════════════
    LEADERBOARD — Supabase, tag = 'balls'
